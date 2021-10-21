@@ -26,14 +26,14 @@ provider "aws" {
 
 resource "aws_vpc" "ex_vpc" {
   cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
+  enable_dns_hostnames = true # stuff not in DNS is the worst.
 
   tags = {
     Name = "example VPC"
   }
 }
 
-# backend subnets
+# subnets for backends
 resource "aws_subnet" "ex_public_apse2a" {
   vpc_id            = aws_vpc.ex_vpc.id
   cidr_block        = "10.0.1.0/24"
@@ -87,14 +87,14 @@ resource "aws_security_group" "ex_webserver" {
   description = "network security policy for webserver backends (allow inbound SSH & HTTP)"
   vpc_id      = aws_vpc.ex_vpc.id
 
-  # let SSH in
+  # let SSH in (we would definitely not do this in the real world!)
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  # and HTTP too
+  # and HTTP too (probably wouldn't do this in the real world either)
   ingress {
     from_port   = 80
     to_port     = 80
@@ -118,7 +118,6 @@ resource "aws_security_group" "ex_webserver" {
 resource "aws_launch_configuration" "ex_webserver" {
   name_prefix = "ex-web-"
 
-  #  image_id = "ami-0947d2ba12ee1ff75" # Amazon Linux 2 AMI (HVM), SSD Volume Type
   image_id      = "ami-0d2f34c92aa48cd95" # Debian 10 @sydney
   instance_type = "t2.micro"
   key_name      = "miiichael"
@@ -155,6 +154,7 @@ resource "aws_security_group" "ex_elb_http" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # I guess this is to allow ELB to get to the backends?
   egress {
     from_port   = 0
     to_port     = 0
@@ -168,25 +168,9 @@ resource "aws_security_group" "ex_elb_http" {
 }
 
 resource "aws_elb" "ex_frontend" {
-  name = "web-elb"
-  security_groups = [
-    aws_security_group.ex_elb_http.id
-  ]
-  subnets = [
-    aws_subnet.ex_public_apse2a.id,
-    aws_subnet.ex_public_apse2a.id
-  ]
-
-  # enabled by default in terraform...
-  # cross_zone_load_balancing   = true
-
-  #  health_check {
-  #    healthy_threshold = 2
-  #    unhealthy_threshold = 2
-  #    timeout = 3
-  #    interval = 30
-  #    target = "HTTP:80/"
-  #  }
+  name            = "web-elb"
+  security_groups = [aws_security_group.ex_elb_http.id]
+  subnets         = [aws_subnet.ex_public_apse2a.id, aws_subnet.ex_public_apse2a.id]
 
   listener {
     # SSL? What's that? <_< >_>
@@ -198,7 +182,7 @@ resource "aws_elb" "ex_frontend" {
 }
 
 resource "aws_autoscaling_group" "ex_frontent_asg" {
-  # this strikes me as a little bit sneaky
+  # this strikes me as a little bit sneaky. yet sensible.
   name = "${aws_launch_configuration.ex_webserver.name}-asg"
 
   min_size         = 1
@@ -206,7 +190,7 @@ resource "aws_autoscaling_group" "ex_frontent_asg" {
   max_size         = 4
 
   health_check_type = "ELB"
-  load_balancers = [ aws_elb.ex_frontend.id ]
+  load_balancers    = [aws_elb.ex_frontend.id]
 
   launch_configuration = aws_launch_configuration.ex_webserver.name
 
@@ -241,4 +225,3 @@ resource "aws_autoscaling_group" "ex_frontent_asg" {
 output "elb_dns_name" {
   value = aws_elb.ex_frontend.dns_name
 }
-
